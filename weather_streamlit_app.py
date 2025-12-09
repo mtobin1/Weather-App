@@ -755,19 +755,27 @@ def display_weather(location, weather_data, model_key='default'):
         with st.expander("🔍 Debug: Precipitation Forecast (next 12 hours)", expanded=False):
             hourly = weather_data['hourly']
             if 'precipitation_probability' in hourly:
-                # Find current hour index (same logic as hourly forecast)
+                # Find current hour index using UTC time comparison
                 all_times = hourly.get('time', [])
-                current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
                 start_idx = 0
                 
-                for i, time_str in enumerate(all_times):
+                if all_times:
                     try:
-                        dt = datetime.fromisoformat(time_str.replace('Z', ''))
-                        if dt >= current_hour:
-                            start_idx = i
-                            break
+                        # Get current UTC time
+                        now_utc = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+                        
+                        for i, time_str in enumerate(all_times):
+                            # Parse the time string from API
+                            dt = datetime.fromisoformat(time_str)
+                            # Make timezone-aware if not already
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            
+                            if dt >= now_utc:
+                                start_idx = i
+                                break
                     except:
-                        continue
+                        start_idx = 0
                 
                 # Get next 12 hours starting from current hour
                 probs = hourly['precipitation_probability'][start_idx:start_idx+12]
@@ -777,7 +785,7 @@ def display_weather(location, weather_data, model_key='default'):
                 for i, (time_str, prob) in enumerate(zip(times, probs)):
                     # Show all hours, even if probability is 0 or None
                     try:
-                        dt = datetime.fromisoformat(time_str.replace('Z', ''))
+                        dt = datetime.fromisoformat(time_str)
                         time_only = dt.strftime("%I:%M %p")  # Format as 12-hour time
                     except:
                         time_only = time_str.split('T')[1] if 'T' in time_str else time_str
@@ -863,18 +871,29 @@ def display_weather(location, weather_data, model_key='default'):
         all_precip_probs = hourly.get('precipitation_probability', [])
         
         
-        # Find current hour index
-        current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+        # Find current hour index by comparing against UTC time
+        # The API returns times in ISO format with timezone info
         start_idx = 0
-        
-        for i, time_str in enumerate(all_times):
+        if all_times:
             try:
-                dt = datetime.fromisoformat(time_str.replace('Z', ''))
-                if dt >= current_hour:
-                    start_idx = i
-                    break
-            except:
-                continue
+                # Get current UTC time
+                now_utc = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+                
+                # Find the current or next hour in the hourly data
+                for i, time_str in enumerate(all_times):
+                    # Parse the time string from API (handles timezone automatically)
+                    dt = datetime.fromisoformat(time_str)
+                    # Make timezone-aware if not already
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    
+                    # Check if this time is current or future
+                    if dt >= now_utc:
+                        start_idx = i
+                        break
+            except Exception as e:
+                # Fallback to first hour if parsing fails
+                start_idx = 0
         
         # Get 24 hours starting from current hour
         times = all_times[start_idx:start_idx+24]
@@ -886,8 +905,8 @@ def display_weather(location, weather_data, model_key='default'):
         hourly_cards = []
         for idx in range(len(times)):
             try:
-                # Parse time
-                dt = datetime.fromisoformat(times[idx].replace('Z', ''))
+                # Parse time (handles timezone from API response)
+                dt = datetime.fromisoformat(times[idx])
                 
                 # Show "Now" for first hour, otherwise time
                 if idx == 0:
